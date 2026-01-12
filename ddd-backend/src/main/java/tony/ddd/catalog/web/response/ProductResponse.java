@@ -1,6 +1,7 @@
 package tony.ddd.catalog.web.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Getter;
 import org.springframework.hateoas.RepresentationModel;
 import org.springframework.hateoas.server.core.Relation;
 import tony.ddd.catalog.application.dto.ProductDto;
@@ -11,6 +12,7 @@ import java.math.BigDecimal;
 /**
  * HATEOAS response model for Product.
  */
+@Getter
 @Relation(collectionRelation = "products", itemRelation = "product")
 @Schema(description = "Product representation with HATEOAS links")
 public class ProductResponse extends RepresentationModel<ProductResponse> {
@@ -60,31 +62,4 @@ public class ProductResponse extends RepresentationModel<ProductResponse> {
         );
     }
 
-    public String getId() {
-        return id;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public BigDecimal getPrice() {
-        return price;
-    }
-
-    public String getCurrency() {
-        return currency;
-    }
-
-    public String getSku() {
-        return sku;
-    }
-
-    public ProductStatus getStatus() {
-        return status;
-    }
 }

@@ -1,6 +1,7 @@
 package tony.ddd.order.web.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Getter;
 import org.springframework.hateoas.RepresentationModel;
 import org.springframework.hateoas.server.core.Relation;
 import tony.ddd.order.application.dto.OrderDto;
@@ -14,10 +15,12 @@ import java.util.List;
  * HATEOAS response model for Order.
  * Extends RepresentationModel to support hypermedia links.
  */
+@Getter
 @Relation(collectionRelation = "orders", itemRelation = "order")
 @Schema(description = "Order representation with HATEOAS links")
 public class OrderResponse extends RepresentationModel<OrderResponse> {
 
+    // Getters
     @Schema(description = "Unique order identifier", example = "ord-123e4567-e89b")
     private final String id;
 
@@ -105,60 +108,4 @@ public class OrderResponse extends RepresentationModel<OrderResponse> {
         );
     }
 
-    // Getters
-    public String getId() {
-        return id;
-    }
-
-    public String getCustomerId() {
-        return customerId;
-    }
-
-    public AddressResponse getShippingAddress() {
-        return shippingAddress;
-    }
-
-    public List<OrderItemResponse> getItems() {
-        return items;
-    }
-
-    public OrderStatus getStatus() {
-        return status;
-    }
-
-    public String getStatusDescription() {
-        return statusDescription;
-    }
-
-    public BigDecimal getSubtotal() {
-        return subtotal;
-    }
-
-    public BigDecimal getShippingCost() {
-        return shippingCost;
-    }
-
-    public BigDecimal getTotalAmount() {
-        return totalAmount;
-    }
-
-    public int getItemCount() {
-        return itemCount;
-    }
-
-    public int getTotalQuantity() {
-        return totalQuantity;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public Instant getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public String getCancellationReason() {
-        return cancellationReason;
-    }
 }
