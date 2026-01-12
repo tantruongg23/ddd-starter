@@ -1,0 +1,7 @@
+{
+    "java.configuration.updateBuildConfiguration": "interactive",
+    "java.project.sourcePaths": [
+        "ddd-backend/src/main/java/tony/ddd",
+        "ddd-backend"
+    ]
+}
