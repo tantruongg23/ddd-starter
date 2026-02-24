@@ -111,6 +111,10 @@ public class OrderApplicationService {
         orderRepository.save(order);
         
         // 5. Publish events
+        // NOTE: Use @TransactionalEventListener(phase = AFTER_COMMIT) on handlers
+        // to ensure events are only processed if the transaction commits.
+        // For cross-service events, consider the Transactional Outbox pattern
+        // (see Chapter 12: Reliable Event Publishing).
         eventPublisher.publish(order.getDomainEvents());
         order.clearDomainEvents();
         

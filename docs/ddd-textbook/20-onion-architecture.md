@@ -102,19 +102,14 @@ public class PricingService {
 ```java
 // Orchestrates domain objects
 // Depends on Domain Model and Domain Services
-// Defines interfaces for what it needs (ports)
+// Uses interfaces defined in the DOMAIN layer (not here)
 
 package com.company.application;
-
-public interface OrderRepository {  // Interface defined in application layer
-    Optional<Order> findById(OrderId id);
-    void save(Order order);
-}
 
 @Service
 public class PlaceOrderService {
     
-    private final OrderRepository orderRepository;
+    private final OrderRepository orderRepository;  // Interface from domain layer
     private final PricingService pricingService;
     
     @Transactional
@@ -127,6 +122,8 @@ public class PlaceOrderService {
     }
 }
 ```
+
+> **Note:** The `OrderRepository` interface is defined in the **domain layer** (Layer 1/2), not the application layer. This is consistent with the Dependency Inversion Principle — the domain defines the contract, infrastructure implements it.
 
 ### Layer 4: Infrastructure
 
@@ -152,6 +149,71 @@ public class JpaOrderRepository implements OrderRepository {
         jpaRepo.save(toEntity(order));
     }
 }
+```
+
+---
+
+## Project Structure
+
+```
+src/main/java/com/company/
+├── domain/                        # Layer 1 & 2: Domain Model + Domain Services
+│   ├── model/
+│   │   ├── Order.java             # Aggregate Root
+│   │   ├── OrderLine.java         # Entity
+│   │   ├── OrderId.java           # Value Object
+│   │   └── OrderStatus.java       # Value Object
+│   ├── repository/
+│   │   └── OrderRepository.java   # Interface (defined here!)
+│   └── service/
+│       └── PricingService.java    # Domain Service
+│
+├── application/                   # Layer 3: Application Services
+│   ├── PlaceOrderService.java
+│   ├── CancelOrderService.java
+│   └── command/
+│       ├── PlaceOrderCommand.java
+│       └── CancelOrderCommand.java
+│
+└── infrastructure/                # Layer 4: Infrastructure
+    ├── persistence/
+    │   ├── JpaOrderRepository.java  # Implements OrderRepository
+    │   └── entity/
+    │       └── OrderJpaEntity.java
+    └── web/
+        └── OrderController.java
+```
+
+---
+
+## When to Choose Onion Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│            ONION vs HEXAGONAL vs LAYERED                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│   Choose ONION when:                                                │
+│   • You want a visual model that emphasizes "domain at center"     │
+│   • Your team thinks in terms of concentric dependency layers       │
+│   • You want a simple mental model for enforcing dependency rules  │
+│                                                                      │
+│   Choose HEXAGONAL when:                                            │
+│   • You have many external integrations (APIs, queues, DBs)        │
+│   • You want to emphasize "ports and adapters" for testability     │
+│   • Multiple entry points (REST, CLI, message handlers)            │
+│                                                                      │
+│   Choose LAYERED when:                                              │
+│   • Simpler applications with fewer integration concerns            │
+│   • Team is not familiar with port/adapter concepts                 │
+│   • You want the simplest possible structure                        │
+│                                                                      │
+│   KEY INSIGHT: These architectures share the SAME core principle:  │
+│   domain at center, dependencies point inward, infrastructure      │
+│   at the edge. The differences are mostly in visualization and     │
+│   terminology.                                                      │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -196,9 +258,11 @@ public class JpaOrderRepository implements OrderRepository {
 
 3. **Infrastructure at edge** - Easily replaceable
 
-4. **Interfaces in application layer** - Dependency inversion
+4. **Repository interfaces in domain layer** - Not in application layer
 
-5. **Similar to hexagonal** - Different visualization, same principles
+5. **Similar to hexagonal** - Different visualization, same dependency inversion principle
+
+6. **Choose based on team mental model** - All three architectures share the same core principle
 
 ---
 

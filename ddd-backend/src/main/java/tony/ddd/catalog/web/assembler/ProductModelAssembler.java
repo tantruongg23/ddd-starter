@@ -4,7 +4,6 @@ import org.springframework.hateoas.CollectionModel;
 import org.springframework.hateoas.server.RepresentationModelAssembler;
 import org.springframework.stereotype.Component;
 import tony.ddd.catalog.application.dto.ProductDto;
-import tony.ddd.catalog.domain.model.ProductStatus;
 import tony.ddd.catalog.web.controller.ProductController;
 import tony.ddd.catalog.web.response.ProductResponse;
 
@@ -12,7 +11,8 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
-import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.*;
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 
 /**
  * Assembler that converts ProductDto to ProductResponse with HATEOAS links.

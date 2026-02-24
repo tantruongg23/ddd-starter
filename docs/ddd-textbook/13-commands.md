@@ -48,11 +48,7 @@ A **Command** is an object that represents an intention to change the system's s
 ### Basic Command Pattern
 
 ```java
-// Marker interface for all commands
-public interface Command {
-}
-
-// Command with target aggregate
+// Generic command interface
 public interface Command<T> {
     // T is the expected result type
 }
@@ -441,9 +437,11 @@ public class TransferMoneyCommandHandler implements CommandHandler<TransferMoney
 }
 
 // Level 3: Business rules in aggregate
+// NOTE: Each aggregate only modifies its own state.
+// The destination account is credited via an event handler (eventual consistency).
 public class Account {
     
-    public void transfer(Account destination, Money amount) {
+    public void withdraw(Money amount) {
         // Business rule: account must be active
         if (this.status != AccountStatus.ACTIVE) {
             throw new AccountNotActiveException(this.id);
@@ -459,12 +457,32 @@ public class Account {
             throw new DailyLimitExceededException(this.id, this.dailyLimit);
         }
         
-        // Execute transfer
+        // Only modify THIS aggregate's state
         this.balance = this.balance.subtract(amount);
-        destination.balance = destination.balance.add(amount);
         this.dailyTransferAmount = this.dailyTransferAmount.add(amount);
         
-        raise(new MoneyTransferredEvent(this.id, destination.getId(), amount));
+        raise(new FundsWithdrawnEvent(this.id, amount));
+    }
+    
+    public void deposit(Money amount) {
+        ensureActive();
+        this.balance = this.balance.add(amount);
+        raise(new FundsDepositedEvent(this.id, amount));
+    }
+}
+
+// Handler coordinates across aggregates via eventual consistency
+@Component
+public class TransferEventHandler {
+    
+    private final AccountRepository accountRepository;
+    
+    @EventListener
+    @Transactional
+    public void on(FundsWithdrawnEvent event) {
+        // Credit the destination account in a separate transaction
+        // The transfer command handler stores the destinationId 
+        // on the event or in a transfer record
     }
 }
 ```

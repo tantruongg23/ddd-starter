@@ -89,11 +89,14 @@ public class Account {
 }
 
 // ✅ RIGHT: Operation involves multiple aggregates → Service
+// Initiates the transfer by withdrawing from source.
+// The destination is credited via an event handler (eventual consistency).
 public class TransferService {
-    public void transfer(Account source, Account destination, Money amount) {
-        // Neither account should "own" this operation
-        source.withdraw(amount);
-        destination.deposit(amount);
+    public void initiateTransfer(Account source, AccountId destinationId, Money amount) {
+        // Validate the transfer is allowed
+        source.withdraw(amount, destinationId);
+        // The FundsWithdrawnEvent raised by source.withdraw() will trigger
+        // a handler that deposits into the destination account
     }
 }
 
@@ -171,8 +174,9 @@ public class DefaultPricingService implements PricingService {
 
 ```java
 // Transfer between accounts (involves two aggregates)
+// Uses eventual consistency: withdraw from source, credit destination via event handler
 public interface MoneyTransferService {
-    TransferResult transfer(AccountId sourceId, AccountId destinationId, Money amount);
+    TransferResult initiateTransfer(AccountId sourceId, AccountId destinationId, Money amount);
 }
 
 public class DefaultMoneyTransferService implements MoneyTransferService {
@@ -181,38 +185,35 @@ public class DefaultMoneyTransferService implements MoneyTransferService {
     private final TransferPolicy transferPolicy;
     
     @Override
-    public TransferResult transfer(AccountId sourceId, AccountId destinationId, Money amount) {
+    public TransferResult initiateTransfer(AccountId sourceId, AccountId destinationId, Money amount) {
         Account source = accountRepository.findById(sourceId)
             .orElseThrow(() -> new AccountNotFoundException(sourceId));
         
-        Account destination = accountRepository.findById(destinationId)
-            .orElseThrow(() -> new AccountNotFoundException(destinationId));
-        
         // Validate transfer according to domain rules
-        transferPolicy.validate(source, destination, amount);
+        // (destination existence can be validated here or in the event handler)
+        transferPolicy.validate(source, destinationId, amount);
         
-        // Execute transfer (domain logic)
-        source.withdraw(amount);
-        destination.deposit(amount);
+        // Only modify the source aggregate — withdraw funds
+        // source.withdraw() raises a FundsWithdrawnEvent
+        source.withdraw(amount, destinationId);
         
-        // Note: Saving should happen in application service/transaction
-        // Domain service focuses on the domain logic
+        // Note: Saving happens in application service/transaction
+        // The FundsWithdrawnEvent triggers a handler that deposits
+        // into the destination account in a separate transaction
         
-        return TransferResult.successful(source.getId(), destination.getId(), amount);
+        return TransferResult.initiated(source.getId(), destinationId, amount);
     }
 }
 
 // Transfer policy encapsulates business rules
 public class TransferPolicy {
     
-    public void validate(Account source, Account destination, Money amount) {
-        // Same currency required
-        if (!source.getCurrency().equals(destination.getCurrency())) {
-            throw new CurrencyMismatchException(source.getCurrency(), destination.getCurrency());
-        }
+    public void validate(Account source, AccountId destinationId, Money amount) {
+        // Same currency validation would happen at a higher level
+        // or when the destination processes the deposit
         
         // Cannot transfer to same account
-        if (source.getId().equals(destination.getId())) {
+        if (source.getId().equals(destinationId)) {
             throw new SameAccountTransferException(source.getId());
         }
         

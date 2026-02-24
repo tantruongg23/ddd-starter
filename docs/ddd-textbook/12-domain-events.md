@@ -103,8 +103,8 @@ A **Domain Event** is something significant that happened in the domain that dom
 ```java
 // Base interface for all domain events
 public interface DomainEvent {
-    Instant getOccurredAt();
-    String getEventType();
+    Instant occurredAt();
+    String eventType();
 }
 
 // Abstract base with common properties
@@ -120,68 +120,63 @@ public abstract class BaseDomainEvent implements DomainEvent {
     public String getEventId() { return eventId; }
     
     @Override
-    public Instant getOccurredAt() { return occurredAt; }
+    public Instant occurredAt() { return occurredAt; }
     
     @Override
-    public String getEventType() {
+    public String eventType() {
         return this.getClass().getSimpleName();
     }
 }
 ```
 
-### Example Domain Events
+### Example Domain Events (Internal)
+
+Internal events use **rich domain types** and are handled within the same bounded context:
 
 ```java
-// Order Events
+// Internal events - use rich domain types
 public class OrderPlacedEvent extends BaseDomainEvent {
-    private final String orderId;
-    private final String customerId;
-    private final List<OrderLineSnapshot> lines;
-    private final BigDecimal totalAmount;
-    private final String currency;
+    private final OrderId orderId;
+    private final CustomerId customerId;
+    private final List<OrderLine> lines;
+    private final Money total;
     
     public OrderPlacedEvent(OrderId orderId, CustomerId customerId, 
-                           List<OrderLineSnapshot> lines, Money total) {
+                           List<OrderLine> lines, Money total) {
         super();
-        this.orderId = orderId.getValue();
-        this.customerId = customerId.getValue();
+        this.orderId = orderId;
+        this.customerId = customerId;
         this.lines = List.copyOf(lines);
-        this.totalAmount = total.getAmount();
-        this.currency = total.getCurrency().getCurrencyCode();
+        this.total = total;
     }
     
     // Getters...
 }
 
 public class OrderCancelledEvent extends BaseDomainEvent {
-    private final String orderId;
-    private final String reason;
-    private final String cancelledBy;
+    private final OrderId orderId;
+    private final CancellationReason reason;
     
     public OrderCancelledEvent(OrderId orderId, CancellationReason reason) {
         super();
-        this.orderId = orderId.getValue();
-        this.reason = reason.getCode();
-        this.cancelledBy = reason.getCancelledBy();
+        this.orderId = orderId;
+        this.reason = reason;
     }
 }
 
-// Payment Events
 public class PaymentReceivedEvent extends BaseDomainEvent {
-    private final String paymentId;
-    private final String orderId;
-    private final BigDecimal amount;
-    private final String currency;
-    private final String paymentMethod;
+    private final PaymentId paymentId;
+    private final OrderId orderId;
+    private final Money amount;
+    private final PaymentMethod paymentMethod;
     
     public PaymentReceivedEvent(PaymentId paymentId, OrderId orderId, 
                                Money amount, PaymentMethod method) {
         super();
-        this.paymentId = paymentId.getValue();
-        this.orderId = orderId.getValue();
-        this.amount = amount.getAmount();
-        this.currency = amount.getCurrency().getCurrencyCode();
-        this.paymentMethod = method.name();
+        this.paymentId = paymentId;
+        this.orderId = orderId;
+        this.amount = amount;
+        this.paymentMethod = method;
     }
 }
 
@@ -189,23 +184,23 @@ public class PaymentReceivedEvent extends BaseDomainEvent {
 public record CustomerRegisteredEvent(
     String eventId,
     Instant occurredAt,
-    String customerId,
-    String email,
-    String name
+    CustomerId customerId,
+    Email email,
+    Name name
 ) implements DomainEvent {
     
     public CustomerRegisteredEvent(CustomerId customerId, Email email, Name name) {
         this(
             UUID.randomUUID().toString(),
             Instant.now(),
-            customerId.getValue(),
-            email.getValue(),
-            name.getFullName()
+            customerId,
+            email,
+            name
         );
     }
     
     @Override
-    public String getEventType() {
+    public String eventType() {
         return "CustomerRegistered";
     }
 }
@@ -272,7 +267,7 @@ public class Order extends AggregateRoot<OrderId> {
 public class OrderApplicationService {
     
     private final OrderRepository orderRepository;
-    private final DomainEventPublisher eventPublisher;
+    private final ApplicationEventPublisher applicationEventPublisher;
     
     @Transactional
     public OrderId placeOrder(PlaceOrderCommand command) {
@@ -283,8 +278,9 @@ public class OrderApplicationService {
         // Save aggregate
         orderRepository.save(order);
         
-        // Publish collected events
-        eventPublisher.publish(order.getDomainEvents());
+        // Publish collected events using Spring's ApplicationEventPublisher
+        // These will be handled by @TransactionalEventListener (see below)
+        order.getDomainEvents().forEach(applicationEventPublisher::publishEvent);
         order.clearDomainEvents();
         
         return order.getId();
@@ -297,7 +293,7 @@ public interface DomainEventPublisher {
     void publish(Collection<DomainEvent> events);
 }
 
-// Spring implementation
+// Spring implementation using @TransactionalEventListener for safe publishing
 @Component
 public class SpringDomainEventPublisher implements DomainEventPublisher {
     
@@ -311,6 +307,72 @@ public class SpringDomainEventPublisher implements DomainEventPublisher {
     @Override
     public void publish(Collection<DomainEvent> events) {
         events.forEach(this::publish);
+    }
+}
+```
+
+### Reliable Event Publishing
+
+The pattern above publishes events _during_ the transaction. If the transaction rolls back after events are dispatched, consumers may process events for changes that never persisted. There are two main solutions:
+
+#### Option 1: `@TransactionalEventListener` (Recommended for In-Process)
+
+```java
+// Events are delivered ONLY after the transaction commits successfully
+@Component
+public class SafeInventoryEventHandler {
+    
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void on(OrderPlacedEvent event) {
+        // This only runs if the transaction committed
+        inventoryService.reserve(event.getOrderId(), event.getLines());
+    }
+}
+```
+
+#### Option 2: Transactional Outbox Pattern (For Cross-Service)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                   TRANSACTIONAL OUTBOX                               │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│   Same Transaction:                                                 │
+│   ┌────────────────────────────────────────────────────────────┐    │
+│   │  1. Save aggregate to database                             │    │
+│   │  2. Write event to OUTBOX table (same TX)                  │    │
+│   └────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│   Separate Process:                                                 │
+│   ┌────────────────────────────────────────────────────────────┐    │
+│   │  3. Poller/CDC reads outbox table                          │    │
+│   │  4. Publishes event to message broker                      │    │
+│   │  5. Marks outbox row as published                          │    │
+│   └────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│   Guarantee: Event is published if and only if state was saved.    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+```java
+// Outbox-based event publisher
+@Component
+public class OutboxEventPublisher implements DomainEventPublisher {
+    
+    private final OutboxRepository outboxRepository;
+    
+    @Override
+    public void publish(DomainEvent event) {
+        // Store event in outbox table — same transaction as aggregate save
+        outboxRepository.save(new OutboxEntry(
+            event.getEventId(),
+            event.eventType(),
+            serialize(event),
+            event.occurredAt()
+        ));
+        // A separate poller or CDC process picks up outbox entries
+        // and publishes them to the message broker
     }
 }
 ```

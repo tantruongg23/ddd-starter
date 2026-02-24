@@ -483,6 +483,129 @@ List<Order> stalePendingOrders = orderRepository.findAll(spec);
 
 ---
 
+## Persistence Challenges
+
+### The Impedance Mismatch
+
+Domain models and relational databases have fundamentally different structures. There are two main approaches:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│           PERSISTENCE STRATEGY TRADE-OFFS                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│   Option A: ORM Annotations on Domain Entities                     │
+│   ┌─────────────────────────────────────────┐                      │
+│   │  @Entity                                │                      │
+│   │  public class Order {                   │                      │
+│   │      @Id private OrderId id;            │                      │
+│   │      @OneToMany private List<Line> ...  │                      │
+│   │  }                                      │                      │
+│   └─────────────────────────────────────────┘                      │
+│   ✓ Less boilerplate                                               │
+│   ✓ Faster initial development                                     │
+│   ✗ JPA annotations pollute domain model                          │
+│   ✗ Domain constrained by ORM capabilities                        │
+│                                                                      │
+│   Option B: Separate Persistence Model (Recommended for DDD)      │
+│   ┌───────────────┐      ┌───────────────┐                        │
+│   │ Order (Domain)│ ←──► │ OrderEntity   │                        │
+│   │               │ map  │ (JPA Entity)  │                        │
+│   └───────────────┘      └───────────────┘                        │
+│   ✓ Clean domain model                                            │
+│   ✓ Domain and persistence evolve independently                   │
+│   ✗ Mapping code required                                          │
+│   ✗ More classes to maintain                                       │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Optimistic Locking
+
+Use version fields to prevent concurrent modification of aggregates:
+
+```java
+// JPA Entity with optimistic locking
+@Entity
+@Table(name = "orders")
+public class OrderJpaEntity {
+    
+    @Id
+    private String id;
+    
+    @Version  // JPA will check and increment this automatically
+    private Long version;
+    
+    private String customerId;
+    private String status;
+    // ...
+}
+
+// Repository translates version conflicts to domain exceptions
+@Repository
+public class JpaOrderRepository implements OrderRepository {
+    
+    @Override
+    public void save(Order order) {
+        try {
+            OrderJpaEntity entity = mapper.toEntity(order);
+            jpaRepository.save(entity);
+        } catch (OptimisticLockingFailureException e) {
+            throw new ConcurrentModificationException(
+                "Order " + order.getId() + " was modified by another process", e);
+        }
+    }
+}
+```
+
+### Lazy Loading Pitfalls
+
+```java
+// ✗ PROBLEM: Loading aggregate outside transaction causes LazyInitializationException
+Order order = orderRepository.findById(orderId);
+order.getLines();  // BOOM! Session closed
+
+// ✓ SOLUTION 1: Always load complete aggregates in repository
+@Override
+public Optional<Order> findById(OrderId id) {
+    return jpaRepository.findById(id.getValue())
+        .map(entity -> {
+            entity.getLines().size();  // Force loading within session
+            return mapper.toDomain(entity);
+        });
+}
+
+// ✓ SOLUTION 2: Use @EntityGraph or JOIN FETCH
+@EntityGraph(attributePaths = {"lines", "shippingAddress"})
+Optional<OrderJpaEntity> findById(String id);
+```
+
+### Repository-Level Event Auto-Publishing
+
+Instead of manually calling `clearDomainEvents()`, let the repository handle it:
+
+```java
+@Repository
+public class JpaOrderRepository implements OrderRepository {
+    
+    private final DomainEventPublisher eventPublisher;
+    
+    @Override
+    public void save(Order order) {
+        // 1. Save aggregate
+        jpaRepository.save(mapper.toEntity(order));
+        
+        // 2. Auto-publish events
+        eventPublisher.publish(order.getDomainEvents());
+        
+        // 3. Clear events — callers never need to remember this
+        order.clearDomainEvents();
+    }
+}
+```
+
+---
+
 ## Key Takeaways
 
 1. **One repository per aggregate root** - Not for every entity
@@ -496,6 +619,10 @@ List<Order> stalePendingOrders = orderRepository.findAll(spec);
 5. **Use in-memory implementations for testing** - Fast, isolated tests
 
 6. **Specification pattern for complex queries** - Composable, reusable
+
+7. **Consider separate persistence models** - Keep domain clean from ORM concerns
+
+8. **Use optimistic locking** - Prevent concurrent modification of aggregates
 
 ---
 

@@ -112,12 +112,18 @@
 **Model-Driven Design**
 : The practice of implementing the domain model directly in code, not just as documentation.
 
+**Modular Monolith**
+: An architecture where bounded contexts are deployed as a single unit but are logically separated into modules with strict boundaries. A stepping stone between a monolith and microservices.
+
 ---
 
 ## O
 
 **Onion Architecture**
 : Architecture visualized as concentric layers with domain at center. Dependencies point inward.
+
+**Optimistic Locking**
+: A concurrency control strategy where a version field is checked at save time. If another process modified the aggregate since it was loaded, the save fails with a conflict.
 
 ---
 
@@ -132,6 +138,9 @@
 **Published Language**
 : A shared model specifically for integration between bounded contexts.
 
+**Outbox Pattern**
+: A reliable messaging pattern where events are written to a database table (outbox) in the same transaction as the aggregate save, then published to a message broker by a separate process.
+
 ---
 
 ## R
@@ -145,6 +154,9 @@
 ---
 
 ## S
+
+**Saga / Process Manager**
+: A pattern for managing long-running business processes that span multiple aggregates or bounded contexts. Uses events and compensating actions to maintain consistency.
 
 **Shared Kernel**
 : A small subset of the domain model shared between two bounded contexts.

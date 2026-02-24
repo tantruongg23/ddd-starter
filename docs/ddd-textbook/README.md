@@ -47,6 +47,7 @@ Welcome to the Domain-Driven Design Textbook. This documentation serves as a com
 
 - [Chapter 24: Starting a DDD Project](./24-starting-ddd-project.md)
 - [Chapter 25: Event Storming Workshop](./25-event-storming.md)
+- [Chapter 26: Testing in Domain-Driven Design](./26-testing.md)
 
 ### Appendices
 

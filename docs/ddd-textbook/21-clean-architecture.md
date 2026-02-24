@@ -157,6 +157,98 @@ public class PlaceOrderUseCase {
 
 ---
 
+## Crossing Boundaries
+
+The most important concept in Clean Architecture is how data crosses boundaries between layers. Each layer should define its own input/output data types:
+
+```java
+// Controller (Interface Adapter) converts HTTP to Use Case input
+@RestController
+@RequestMapping("/api/orders")
+public class OrderController {
+    
+    private final PlaceOrderUseCase placeOrderUseCase;
+    
+    @PostMapping
+    public ResponseEntity<OrderResponse> placeOrder(@RequestBody PlaceOrderRequest request) {
+        // Convert external format → use case input
+        PlaceOrderInput input = new PlaceOrderInput(
+            request.getCustomerId(),
+            request.getItems().stream()
+                .map(i -> new OrderLineData(i.getProductId(), i.getQuantity()))
+                .toList(),
+            request.getShippingAddressId()
+        );
+        
+        // Call use case
+        PlaceOrderOutput output = placeOrderUseCase.execute(input);
+        
+        // Convert use case output → external format
+        return ResponseEntity.created(URI.create("/api/orders/" + output.orderId()))
+            .body(new OrderResponse(output.orderId(), output.status(), output.total()));
+    }
+}
+```
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│   DATA FLOW ACROSS BOUNDARIES                                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│   HTTP Request                                                      │
+│       ↓                                                              │
+│   PlaceOrderRequest (Framework DTO)                                 │
+│       ↓ mapped by Controller                                        │
+│   PlaceOrderInput (Use Case Input)                                  │
+│       ↓ used by Use Case                                            │
+│   Order (Domain Entity)                                             │
+│       ↓ returned as                                                 │
+│   PlaceOrderOutput (Use Case Output)                                │
+│       ↓ mapped by Controller                                        │
+│   OrderResponse (Framework DTO)                                     │
+│       ↓                                                              │
+│   HTTP Response                                                      │
+│                                                                      │
+│   Each layer defines its own types → no layer leaks to others      │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Screaming Architecture
+
+Uncle Bob's "Screaming Architecture" principle: looking at the top-level structure should tell you what the application **does**, not what framework it uses.
+
+```
+✗ BAD: Framework-driven structure (screams "Spring")
+src/main/java/
+├── controllers/          ← What is this app about?
+├── services/
+├── repositories/
+├── models/
+└── configs/
+
+✓ GOOD: Domain-driven structure (screams "Healthcare")
+src/main/java/com/company/
+├── patient/              ← Core domain
+│   ├── domain/
+│   ├── usecase/
+│   └── adapter/
+├── appointment/          ← Core domain
+│   ├── domain/
+│   ├── usecase/
+│   └── adapter/
+├── billing/              ← Supporting domain
+│   ├── domain/
+│   ├── usecase/
+│   └── adapter/
+└── identity/             ← Generic domain
+    └── adapter/
+```
+
+---
+
 ## Key Principles
 
 ```

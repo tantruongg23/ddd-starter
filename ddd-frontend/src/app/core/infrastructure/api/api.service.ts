@@ -1,16 +1,13 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpParams, HttpErrorResponse } from '@angular/common/http';
-import { Observable, throwError, of } from 'rxjs';
+import { Observable, of } from 'rxjs';
 import { catchError, map, retry, timeout } from 'rxjs/operators';
 import { environment } from '@env';
 import { Result, DomainError, ValidationError, NotFoundError, UnauthorizedError } from '../../domain/result';
 import { 
-  HateoasResource, 
+  HateoasResource,
   HateoasLinks, 
-  HateoasLink, 
-  HateoasPagedResource,
-  WithLinks,
-  LinkRel 
+  WithLinks 
 } from './hateoas.model';
 
 /**
@@ -260,6 +257,8 @@ export class ApiService {
     
     const url = this.buildUrl(endpoint);
     
+    type ResultType = { data: WithLinks<T>[]; pagination: PaginatedResponse<T>['pagination']; links: HateoasLinks };
+    
     return this.http.get<HateoasPaginatedResponse<WithLinks<T>>>(url, { params: finalParams }).pipe(
       timeout(this.defaultTimeout),
       retry(this.defaultRetries),
@@ -267,7 +266,7 @@ export class ApiService {
         const embedded = response._embedded?.[collectionName] ?? [];
         const pageInfo = response.page;
         
-        return Result.ok<{ data: WithLinks<T>[]; pagination: PaginatedResponse<T>['pagination']; links: HateoasLinks }, DomainError>({
+        return Result.ok<ResultType, DomainError>({
           data: embedded,
           pagination: {
             page: (pageInfo?.number ?? 0) + 1, // Spring uses 0-based pages
@@ -280,7 +279,7 @@ export class ApiService {
           links: response._links ?? {}
         });
       }),
-      catchError(error => this.handleError(error))
+      catchError(error => this.handleError<ResultType>(error))
     );
   }
 
@@ -377,7 +376,8 @@ export class ApiService {
     }
     
     // It's a direct HATEOAS response (Spring HATEOAS format)
-    return Result.ok(response as WithLinks<T>);
+    // TypeScript narrows to WithLinks<T> after the type guard above
+    return Result.ok(response);
   }
 
   /**
@@ -391,7 +391,8 @@ export class ApiService {
     
     // Absolute path - prepend the base domain
     if (href.startsWith('/')) {
-      const match = environment.apiUrl.match(/^(https?:\/\/[^/]+)/);
+      const regex = /^(https?:\/\/[^/]+)/;
+      const match = regex.exec(environment.apiUrl);
       if (match) {
         return `${match[1]}${href}`;
       }

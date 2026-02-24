@@ -175,6 +175,96 @@ public class OrderReadModelUpdater {
 
 ---
 
+## Simple CQRS (Same Database)
+
+You don't need separate databases to benefit from CQRS. Start simple with separate models sharing the same database:
+
+```java
+// WRITE SIDE: Uses rich domain model
+@Service
+public class OrderCommandService {
+    
+    private final OrderRepository orderRepository;
+    
+    @Transactional
+    public OrderId placeOrder(PlaceOrderCommand command) {
+        Order order = Order.create(new CustomerId(command.customerId()));
+        command.items().forEach(item -> 
+            order.addLine(item.productId(), item.quantity(), item.price()));
+        order.place();
+        orderRepository.save(order);
+        return order.getId();
+    }
+}
+
+// READ SIDE: Bypasses domain model, queries directly
+@Service
+public class OrderQueryService {
+    
+    private final JdbcTemplate jdbc;
+    
+    public OrderSummaryView getOrderSummary(String orderId) {
+        return jdbc.queryForObject("""
+            SELECT o.id, o.status, o.total, c.name as customer_name,
+                   o.created_at, COUNT(ol.id) as item_count
+            FROM orders o
+            JOIN customers c ON o.customer_id = c.id
+            JOIN order_lines ol ON ol.order_id = o.id
+            WHERE o.id = ?
+            GROUP BY o.id, o.status, o.total, c.name, o.created_at
+            """, this::mapToSummary, orderId);
+    }
+    
+    public List<OrderListView> getOrdersByCustomer(String customerId) {
+        return jdbc.query("""
+            SELECT o.id, o.status, o.total, o.created_at
+            FROM orders o
+            WHERE o.customer_id = ?
+            ORDER BY o.created_at DESC
+            """, this::mapToListView, customerId);
+    }
+}
+```
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│           SIMPLE vs FULL CQRS                                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│   SIMPLE CQRS (Start Here):                                        │
+│   ┌──────────────────┐  ┌──────────────────┐                       │
+│   │   Write Model    │  │   Read Model     │                       │
+│   │   (Aggregates)   │  │   (SQL queries)  │                       │
+│   │        │         │  │        │         │                       │
+│   │        ▼         │  │        ▼         │                       │
+│   │   ┌──────────────┼──┼──────────────┐   │                       │
+│   │   │         SAME DATABASE          │   │                       │
+│   │   └────────────────────────────────┘   │                       │
+│   └──────────────────┘  └──────────────────┘                       │
+│   ✓ Immediate consistency                                          │
+│   ✓ Simple to implement                                            │
+│   ✓ No event synchronization needed                                │
+│                                                                      │
+│   FULL CQRS (When Needed):                                         │
+│   ┌──────────────────┐  ┌──────────────────┐                       │
+│   │   Write Model    │  │   Read Model     │                       │
+│   │   (Aggregates)   │  │   (Projections)  │                       │
+│   │        │         │  │        ▲         │                       │
+│   │        ▼         │  │        │         │                       │
+│   │   ┌──────────┐   │  │   ┌──────────┐   │                       │
+│   │   │ Write DB │───┼──┼──►│ Read DB  │   │                       │
+│   │   └──────────┘   │  │   └──────────┘   │                       │
+│   └──────────────────┘  └──────────────────┘                       │
+│   ✓ Independent scaling                                            │
+│   ✓ Optimized read stores (Elasticsearch, Redis)                   │
+│   ✗ Eventual consistency                                           │
+│   ✗ Higher complexity                                              │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## When to Use CQRS
 
 ```
